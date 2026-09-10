@@ -29,7 +29,101 @@ const QUALITY_HEIGHT: Record<Quality, number> = {
 };
 
 const BIN_PATH = join(process.cwd(), "bin", "yt-dlp");
-const TIMEOUT_MS = 50_000;
+const TIMEOUT_MS = 30_000;
+
+// Volunteer-run Piped API instances used ONLY as a fallback when YouTube
+// bot-blocks the server's own yt-dlp extraction. Instances come and go;
+// dead ones are skipped quickly.
+const PIPED_INSTANCES = ["https://api.piped.private.coffee"];
+
+/** Extract the 11-char video id from common YouTube URL shapes. */
+function youtubeVideoId(urlRaw: string): string | null {
+  try {
+    const u = new URL(urlRaw);
+    const host = u.hostname.toLowerCase();
+    const idOk = (s: string | null) => !!s && /^[A-Za-z0-9_-]{11}$/.test(s);
+    if (host === "youtu.be") {
+      const id = u.pathname.split("/").filter(Boolean)[0] ?? null;
+      return idOk(id) ? id : null;
+    }
+    if (YOUTUBE_HOSTS.has(host)) {
+      const v = u.searchParams.get("v");
+      if (idOk(v)) return v;
+      const m = u.pathname.match(/^\/(shorts|embed|live)\/([A-Za-z0-9_-]{11})/);
+      if (m) return m[2];
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
+}
+
+interface PipedPayload {
+  ok: true;
+  title: string;
+  downloadUrl: string;
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+  width: null;
+  height: number;
+  ext: string;
+  sourceType: "youtube";
+  note: string;
+}
+
+/** Try Piped API instances for a YouTube id. Returns a payload or null. */
+async function tryPipedFallback(
+  videoId: string,
+  maxHeight: number,
+  includeThumbnail: boolean
+): Promise<PipedPayload | null> {
+  for (const base of PIPED_INSTANCES) {
+    try {
+      const res = await fetch(`${base}/streams/${videoId}`, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        title?: unknown;
+        duration?: unknown;
+        thumbnailUrl?: unknown;
+        videoStreams?: { quality?: unknown; videoOnly?: unknown; url?: unknown }[];
+      };
+      const cands: { h: number; url: string }[] = [];
+      for (const s of data.videoStreams ?? []) {
+        if (s.videoOnly !== false || typeof s.url !== "string") continue;
+        const m = /^(\d{3,4})p$/.exec(typeof s.quality === "string" ? s.quality : "");
+        if (!m) continue;
+        const h = parseInt(m[1], 10);
+        if (h <= maxHeight) cands.push({ h, url: s.url });
+      }
+      cands.sort((a, b) => b.h - a.h);
+      if (!cands.length) continue;
+      const best = cands[0];
+      return {
+        ok: true,
+        title: typeof data.title === "string" ? data.title : "Untitled clip",
+        downloadUrl: best.url,
+        thumbnailUrl:
+          includeThumbnail && typeof data.thumbnailUrl === "string"
+            ? data.thumbnailUrl
+            : null,
+        durationSeconds: typeof data.duration === "number" ? data.duration : null,
+        width: null,
+        height: best.h,
+        ext: "mp4",
+        sourceType: "youtube",
+        note:
+          best.h < maxHeight
+            ? `Best available via fallback extractor was ${best.h}p`
+            : "Fetched via fallback extractor",
+      };
+    } catch {
+      /* try next instance */
+    }
+  }
+  return null;
+}
 
 /** Run the bundled yt-dlp binary. Resolves with stdout, or rejects with an Error whose message is provider output. */
 function runYtdlp(args: string[]): Promise<{ stdout: string }> {
@@ -132,8 +226,8 @@ export async function POST(req: Request): Promise<Response> {
   const attempts: string[][] = [[...baseArgs, "-f", selector, urlRaw]];
   if (sourceType === "youtube") {
     // Different player clients hit different YouTube endpoints; web is the
-    // most bot-checked, so fall through android -> ios -> tv on failure.
-    for (const client of ["android", "ios", "tv"]) {
+    // most bot-checked, so fall through android -> ios on failure.
+    for (const client of ["android", "ios"]) {
       attempts.push([
         ...baseArgs,
         "--extractor-args",
@@ -177,6 +271,22 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json(payload, { status: 200 });
     } catch (err) {
       lastErrorText = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // YouTube bot-blocks / rate-limits are often transient and IP-specific, so
+  // retry through a Piped API instance (different egress IP) before giving up.
+  // Genuinely private / login-walled / unsupported links skip this.
+  if (
+    sourceType === "youtube" &&
+    /not a bot|confirm you.{0,5}re not a bot|HTTP Error 429|rate-limit|timed out|__TIMEOUT__/i.test(
+      lastErrorText
+    )
+  ) {
+    const videoId = youtubeVideoId(urlRaw);
+    if (videoId) {
+      const piped = await tryPipedFallback(videoId, maxHeight, includeThumbnail);
+      if (piped) return Response.json(piped, { status: 200 });
     }
   }
 
