@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
+import { fetchFile } from "@ffmpeg/util";
 
 /* ------------------------------------------------------------------ */
 /* 90s hip-hop quotes shown while work is in progress                   */
@@ -24,7 +24,10 @@ const QUOTES: { line: string; artist: string }[] = [
   { line: "It ain't nothin' but a GIF thang.", artist: "Gif Happens remix" },
 ];
 
-const CORE_ST_BASE = "https://unpkg.com/@ffmpeg/core-st@0.11.1/dist";
+// The ffmpeg core is self-hosted (see public/ffmpeg-core): same-origin
+// files, no CDN dependency at runtime. wrapper.js injects `locateFile`
+// so the core-st@0.11.1 wasm resolves to the right file.
+const CORE_ST_BASE = "/ffmpeg-core";
 const WIDTH_OPTIONS = [160, 240, 320, 480, 640];
 const COLOR_OPTIONS = [64, 96, 128, 192, 256];
 
@@ -175,23 +178,15 @@ export default function Home() {
     if (ffmpegRef.current) return ffmpegRef.current;
     setEngineLoading(true);
     try {
-      // NOTE: @ffmpeg/core-st@0.11.1's Emscripten runtime predates the
-      // `mainScriptUrlOrBlob` option that @ffmpeg/ffmpeg@0.12.x sends, so
-      // without help it looks for ffmpeg-core.wasm next to the worker chunk
-      // (404). Wrap the core module to inject a `locateFile` that points at
-      // our wasm blob URL instead.
-      const coreJS = await toBlobURL(`${CORE_ST_BASE}/ffmpeg-core.js`, "text/javascript");
-      const wasm = await toBlobURL(`${CORE_ST_BASE}/ffmpeg-core.wasm`, "application/wasm");
-      const wrapperSrc = [
-        `const WASM_URL = ${JSON.stringify(wasm)};`,
-        `const CORE_URL = ${JSON.stringify(coreJS)};`,
-        "const real = await import(CORE_URL);",
-        "const createFFmpegCore = real.default;",
-        'export default (opts = {}) => createFFmpegCore({ ...opts, locateFile: (p) => (typeof p === "string" && p.endsWith(".wasm") ? WASM_URL : p) });',
-      ].join("\n");
-      const coreURL = URL.createObjectURL(new Blob([wrapperSrc], { type: "text/javascript" }));
+      // The core is self-hosted (public/ffmpeg-core, downloaded at build
+      // time) and loaded through wrapper.js, which injects a `locateFile`
+      // for the wasm. The ffmpeg worker's dynamic import is patched at build
+      // time (scripts/patch-ffmpeg-worker.mjs) so webpack doesn't intercept it.
       const ffmpeg = new FFmpeg();
-      await ffmpeg.load({ coreURL, wasmURL: wasm });
+      await ffmpeg.load({
+        coreURL: `${CORE_ST_BASE}/wrapper.js`,
+        wasmURL: `${CORE_ST_BASE}/ffmpeg-core.wasm`,
+      });
       ffmpegRef.current = ffmpeg;
       return ffmpeg;
     } catch (err) {

@@ -2,5 +2,9 @@ node_modules/
 .next/
 .vercel/
 bin/
+# ffmpeg core binaries are downloaded at build time (see scripts/fetch-ffmpeg-core.mjs);
+# only public/ffmpeg-core/wrapper.js is committed.
+public/ffmpeg-core/ffmpeg-core.js
+public/ffmpeg-core/ffmpeg-core.wasm
 *.log
 .DS_Store
