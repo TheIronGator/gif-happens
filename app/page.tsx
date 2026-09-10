@@ -175,13 +175,31 @@ export default function Home() {
     if (ffmpegRef.current) return ffmpegRef.current;
     setEngineLoading(true);
     try {
+      // NOTE: @ffmpeg/core-st@0.11.1's Emscripten runtime predates the
+      // `mainScriptUrlOrBlob` option that @ffmpeg/ffmpeg@0.12.x sends, so
+      // without help it looks for ffmpeg-core.wasm next to the worker chunk
+      // (404). Wrap the core module to inject a `locateFile` that points at
+      // our wasm blob URL instead.
+      const coreJS = await toBlobURL(`${CORE_ST_BASE}/ffmpeg-core.js`, "text/javascript");
+      const wasm = await toBlobURL(`${CORE_ST_BASE}/ffmpeg-core.wasm`, "application/wasm");
+      const wrapperSrc = [
+        `const WASM_URL = ${JSON.stringify(wasm)};`,
+        `const CORE_URL = ${JSON.stringify(coreJS)};`,
+        "const real = await import(CORE_URL);",
+        "const createFFmpegCore = real.default;",
+        'export default (opts = {}) => createFFmpegCore({ ...opts, locateFile: (p) => (typeof p === "string" && p.endsWith(".wasm") ? WASM_URL : p) });',
+      ].join("\n");
+      const coreURL = URL.createObjectURL(new Blob([wrapperSrc], { type: "text/javascript" }));
       const ffmpeg = new FFmpeg();
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${CORE_ST_BASE}/ffmpeg-core.js`, "text/javascript"),
-        wasmURL: await toBlobURL(`${CORE_ST_BASE}/ffmpeg-core.wasm`, "application/wasm"),
-      });
+      await ffmpeg.load({ coreURL, wasmURL: wasm });
       ffmpegRef.current = ffmpeg;
       return ffmpeg;
+    } catch (err) {
+      // The ffmpeg worker rejects with plain strings, not Errors — wrap so
+      // the real cause reaches the UI instead of a generic message.
+      throw new Error(
+        `Video engine failed to start: ${err instanceof Error ? err.message : String(err)}`
+      );
     } finally {
       setEngineLoading(false);
     }
@@ -322,9 +340,9 @@ export default function Home() {
       );
     } catch (err) {
       if (myRun !== estimateRunId.current) return;
-      setStudioError(
-        err instanceof Error ? err.message : "Something went wrong while estimating the GIF size."
-      );
+      // The ffmpeg worker can reject with plain strings; show the real cause.
+      const msg = err instanceof Error ? err.message : String(err);
+      setStudioError(msg || "Something went wrong while estimating the GIF size.");
     } finally {
       if (myRun === estimateRunId.current) setEstimating(false);
     }
@@ -410,9 +428,9 @@ export default function Home() {
       setGifUrl(URL.createObjectURL(blob));
       setConvertProgress(1);
     } catch (err) {
-      setStudioError(
-        err instanceof Error ? err.message : "Something went wrong while making your GIF."
-      );
+      // The ffmpeg worker can reject with plain strings; show the real cause.
+      const msg = err instanceof Error ? err.message : String(err);
+      setStudioError(msg || "Something went wrong while making your GIF.");
     } finally {
       setConverting(false);
     }
