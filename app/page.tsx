@@ -24,7 +24,7 @@ const QUOTES: { line: string; artist: string }[] = [
   { line: "It ain't nothin' but a GIF thang.", artist: "Gif Happens remix" },
 ];
 
-const CORE_ST_BASE = "https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/esm";
+const CORE_ST_BASE = "https://unpkg.com/@ffmpeg/core-st@0.11.1/dist";
 const WIDTH_OPTIONS = [160, 240, 320, 480, 640];
 const COLOR_OPTIONS = [64, 96, 128, 192, 256];
 
