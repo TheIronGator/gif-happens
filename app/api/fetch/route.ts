@@ -22,6 +22,14 @@ const YOUTUBE_HOSTS = new Set([
 
 const INSTAGRAM_HOSTS = new Set(["instagram.com", "www.instagram.com"]);
 
+const TIKTOK_HOSTS = new Set([
+  "tiktok.com",
+  "www.tiktok.com",
+  "m.tiktok.com",
+  "vm.tiktok.com",
+  "vt.tiktok.com",
+]);
+
 const QUALITY_HEIGHT: Record<Quality, number> = {
   "360": 360,
   "720": 720,
@@ -143,7 +151,7 @@ function runYtdlp(args: string[]): Promise<{ stdout: string }> {
   });
 }
 
-function classifyError(hostType: "youtube" | "instagram", text: string): string {
+function classifyError(hostType: "youtube" | "instagram" | "tiktok", text: string): string {
   const t = text;
   if (hostType === "youtube") {
     // YouTube's bot challenge mentions "sign in", so it must be checked
@@ -154,12 +162,18 @@ function classifyError(hostType: "youtube" | "instagram", text: string): string 
       return "YouTube says this video is private — only public videos can be fetched.";
     if (/login required|sign in/i.test(t))
       return "YouTube needs a login for this video (it's private or age-restricted). Only public, unrestricted videos can be fetched.";
-  } else {
+  } else if (hostType === "instagram") {
     if (/login required|not logged in/i.test(t))
       return "Instagram is blocking anonymous downloads for this post. Only some public posts/reels can be fetched without logging in.";
+  } else {
+    // TikTok
+    if (/private/i.test(t))
+      return "TikTok says this video is private — only public videos can be fetched.";
+    if (/login required|not logged in|sign in/i.test(t))
+      return "TikTok needs a login for this video. Only public videos can be fetched without logging in.";
   }
   if (/HTTP Error 429|rate-limit/i.test(t))
-    return "YouTube is rate-limiting requests right now. Wait a few minutes and try again.";
+    return "The video source is rate-limiting requests right now. Wait a few minutes and try again.";
   if (/Unsupported URL/i.test(t)) return "That URL isn't a supported video link.";
   if (/__TIMEOUT__|ETIMEDOUT|timed out/i.test(t))
     return "The request timed out talking to the video source. Try again.";
@@ -193,25 +207,27 @@ export async function POST(req: Request): Promise<Response> {
       {
         ok: false,
         error:
-          "That doesn't look like a YouTube or Instagram link. Paste a YouTube watch/shorts URL or a public Instagram post/reel URL.",
+          "That doesn't look like a YouTube, TikTok, or Instagram link. Paste a YouTube watch/shorts URL, a TikTok video URL, or a public Instagram post/reel URL.",
       },
       { status: 400 }
     );
   }
 
   const host = parsed.hostname.toLowerCase();
-  const sourceType: "youtube" | "instagram" | null = YOUTUBE_HOSTS.has(host)
+  const sourceType: "youtube" | "instagram" | "tiktok" | null = YOUTUBE_HOSTS.has(host)
     ? "youtube"
     : INSTAGRAM_HOSTS.has(host)
       ? "instagram"
-      : null;
+      : TIKTOK_HOSTS.has(host)
+        ? "tiktok"
+        : null;
 
   if (!sourceType) {
     return Response.json(
       {
         ok: false,
         error:
-          "That doesn't look like a YouTube or Instagram link. Paste a YouTube watch/shorts URL or a public Instagram post/reel URL.",
+          "That doesn't look like a YouTube, TikTok, or Instagram link. Paste a YouTube watch/shorts URL, a TikTok video URL, or a public Instagram post/reel URL.",
       },
       { status: 400 }
     );

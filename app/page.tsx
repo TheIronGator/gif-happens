@@ -45,7 +45,7 @@ interface FetchResult {
   width: number | null;
   height: number | null;
   ext: string | null;
-  sourceType: "youtube" | "instagram";
+  sourceType: "youtube" | "instagram" | "tiktok";
   note?: string;
 }
 
@@ -129,6 +129,8 @@ export default function Home() {
   const fetchCancelRef = useRef(false);
 
   const studioRef = useRef<HTMLDivElement>(null);
+  // Trimmer preview video — the in/out sliders seek this so you see the exact frame.
+  const trimVideoRef = useRef<HTMLVideoElement | null>(null);
 
   /* ---------------- video loading ---------------- */
 
@@ -569,7 +571,13 @@ export default function Home() {
             </div>
           ) : (
             <>
-              <video className="preview" src={videoUrl} controls onLoadedMetadata={onVideoMetadata} />
+              <video
+                ref={trimVideoRef}
+                className="preview"
+                src={videoUrl}
+                controls
+                onLoadedMetadata={onVideoMetadata}
+              />
               <p className="meta-line">
                 📄 {fileName} · {formatSeconds(duration)} long
               </p>
@@ -601,9 +609,16 @@ export default function Home() {
                     max={duration}
                     step={0.1}
                     value={trimStart}
-                    onChange={(e) =>
-                      setTrimStart(Math.min(parseFloat(e.target.value), trimEnd - 0.5))
-                    }
+                    onChange={(e) => {
+                      const v = Math.min(parseFloat(e.target.value), trimEnd - 0.5);
+                      setTrimStart(v);
+                      // Scrub the preview to the exact in-frame while dragging.
+                      const vid = trimVideoRef.current;
+                      if (vid) {
+                        vid.pause();
+                        vid.currentTime = v;
+                      }
+                    }}
                   />
                   <label className="label">
                     End: <strong>{trimEnd.toFixed(1)}s</strong>
@@ -614,9 +629,16 @@ export default function Home() {
                     max={duration}
                     step={0.1}
                     value={trimEnd}
-                    onChange={(e) =>
-                      setTrimEnd(Math.max(parseFloat(e.target.value), trimStart + 0.5))
-                    }
+                    onChange={(e) => {
+                      const v = Math.max(parseFloat(e.target.value), trimStart + 0.5);
+                      setTrimEnd(v);
+                      // Scrub the preview to the exact out-frame while dragging.
+                      const vid = trimVideoRef.current;
+                      if (vid) {
+                        vid.pause();
+                        vid.currentTime = v;
+                      }
+                    }}
                   />
                   <p className="meta-line">✂️ Clip length: {trimDur.toFixed(1)}s</p>
                 </div>
@@ -741,7 +763,8 @@ export default function Home() {
         <section className="section" aria-label="Fetch Clip">
           <h2 className="section-title">📥 Fetch Clip</h2>
           <p className="meta-line">
-            Paste a YouTube or public Instagram link and grab the clip straight from the source.
+            Paste a YouTube, TikTok, or public Instagram link and grab the clip straight
+            from the source.
           </p>
 
           <label className="label" htmlFor="clip-url">
@@ -752,7 +775,7 @@ export default function Home() {
             className="text-input"
             type="url"
             inputMode="url"
-            placeholder="https://www.youtube.com/watch?v=…"
+            placeholder="https://www.youtube.com/watch?v=… or TikTok link"
             value={clipUrl}
             onChange={(e) => setClipUrl(e.target.value)}
           />
