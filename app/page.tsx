@@ -113,6 +113,21 @@ export default function Home() {
   const [gifUrl, setGifUrl] = useState<string | null>(null);
   const [studioError, setStudioError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Custom width input text; null = preset mode (input hidden).
+  const [customWidthText, setCustomWidthText] = useState<string | null>(null);
+
+  const commitCustomWidth = useCallback(() => {
+    if (customWidthText === null) return;
+    const parsed = parseInt(customWidthText, 10);
+    if (isFinite(parsed)) {
+      const clamped = Math.min(1280, Math.max(64, parsed));
+      setSettings((s) => ({ ...s, width: clamped }));
+      setCustomWidthText(String(clamped));
+    } else {
+      // Not a number — revert the field to the current width.
+      setCustomWidthText(String(settings.width));
+    }
+  }, [customWidthText, settings.width]);
 
   const ffmpegRef = useRef<FFmpeg | null>(null);
   const inputBlobRef = useRef<Blob | null>(null);
@@ -312,6 +327,10 @@ export default function Home() {
 
       let finalSettings = { ...settings };
       let estBytes = await bytesFor(finalSettings);
+      // Raw estimate with the user's actual settings, shown separately from
+      // the target size. The tighten loop below only affects effectiveSettings
+      // (what gets exported), not this number.
+      const rawBytes = estBytes;
       let encodes = 1;
       const MAX_ENCODES = 8;
 
@@ -329,7 +348,7 @@ export default function Home() {
 
       if (myRun !== estimateRunId.current) return;
       setEffectiveSettings(finalSettings);
-      setEstimateBytes(estBytes);
+      setEstimateBytes(rawBytes);
       const tightened =
         finalSettings.width !== settings.width ||
         finalSettings.fps !== settings.fps ||
@@ -678,15 +697,41 @@ export default function Home() {
               <label className="label">Width</label>
               <select
                 className="select-input"
-                value={settings.width}
-                onChange={(e) => setSettings((s) => ({ ...s, width: parseInt(e.target.value, 10) }))}
+                value={WIDTH_OPTIONS.includes(settings.width) ? settings.width : "custom"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "custom") {
+                    setCustomWidthText(String(settings.width));
+                  } else {
+                    setCustomWidthText(null);
+                    setSettings((s) => ({ ...s, width: parseInt(v, 10) }));
+                  }
+                }}
               >
                 {WIDTH_OPTIONS.map((w) => (
                   <option key={w} value={w}>
                     {w}px
                   </option>
                 ))}
+                <option value="custom">Custom…</option>
               </select>
+              {customWidthText !== null && (
+                <input
+                  className="select-input"
+                  type="number"
+                  min={64}
+                  max={1280}
+                  step={10}
+                  value={customWidthText}
+                  onChange={(e) => setCustomWidthText(e.target.value)}
+                  onBlur={commitCustomWidth}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
+                  aria-label="Custom width in pixels"
+                  style={{ marginTop: 8 }}
+                />
+              )}
 
               <label className="label">Colors</label>
               <select
@@ -737,7 +782,7 @@ export default function Home() {
 
               {!estimating && !engineLoading && estimateBytes !== null && (
                 <div className="note" style={{ marginTop: 16 }}>
-                  📏 Estimated ≈ <strong>{formatMB(estimateBytes)} MB</strong>
+                  📏 Estimated ≈ <strong>{formatMB(estimateBytes)} MB</strong> with these settings
                 </div>
               )}
               {tightenNote && !estimating && <div className="note">🔧 {tightenNote}</div>}
