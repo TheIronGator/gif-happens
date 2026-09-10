@@ -762,7 +762,7 @@ export default function Home() {
               <input
                 type="range"
                 min={1}
-                max={25}
+                max={50}
                 step={1}
                 value={settings.targetMB}
                 onChange={(e) => setSettings((s) => ({ ...s, targetMB: parseInt(e.target.value, 10) }))}
