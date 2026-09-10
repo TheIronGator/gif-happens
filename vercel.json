@@ -1,0 +1,1 @@
+{"buildCommand":"node scripts/fetch-ytdlp.mjs && next build","functions":{"app/api/fetch/route.ts":{"maxDuration":60}}}
