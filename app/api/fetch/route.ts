@@ -52,8 +52,14 @@ function runYtdlp(args: string[]): Promise<{ stdout: string }> {
 function classifyError(hostType: "youtube" | "instagram", text: string): string {
   const t = text;
   if (hostType === "youtube") {
-    if (/private video|login required|sign in/i.test(t))
-      return "YouTube says this video is private or needs a login — only public videos can be fetched.";
+    // YouTube's bot challenge mentions "sign in", so it must be checked
+    // BEFORE the generic login/private patterns.
+    if (/not a bot|confirm you.{0,5}re not a bot/i.test(t))
+      return "YouTube is blocking automated downloads from this server at the moment. Wait a few minutes and try again.";
+    if (/private video/i.test(t))
+      return "YouTube says this video is private — only public videos can be fetched.";
+    if (/login required|sign in/i.test(t))
+      return "YouTube needs a login for this video (it's private or age-restricted). Only public, unrestricted videos can be fetched.";
   } else {
     if (/login required|not logged in/i.test(t))
       return "Instagram is blocking anonymous downloads for this post. Only some public posts/reels can be fetched without logging in.";
@@ -125,14 +131,18 @@ export async function POST(req: Request): Promise<Response> {
 
   const attempts: string[][] = [[...baseArgs, "-f", selector, urlRaw]];
   if (sourceType === "youtube") {
-    attempts.push([
-      ...baseArgs,
-      "--extractor-args",
-      "youtube:player_client=android",
-      "-f",
-      selector,
-      urlRaw,
-    ]);
+    // Different player clients hit different YouTube endpoints; web is the
+    // most bot-checked, so fall through android -> ios -> tv on failure.
+    for (const client of ["android", "ios", "tv"]) {
+      attempts.push([
+        ...baseArgs,
+        "--extractor-args",
+        `youtube:player_client=${client}`,
+        "-f",
+        selector,
+        urlRaw,
+      ]);
+    }
   }
 
   let lastErrorText = "";
