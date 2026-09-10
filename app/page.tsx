@@ -186,8 +186,11 @@ export default function Home() {
       // core with a native import, which just works. wrapper.js injects
       // `locateFile` so the core-st@0.11.1 wasm resolves to the right file.
       const ffmpeg = new FFmpeg();
+      // classWorkerURL must be absolute: the library resolves it against
+      // import.meta.url, which the bundler bakes in as a file:// URL.
+      const origin = window.location.origin;
       await ffmpeg.load({
-        classWorkerURL: `${CORE_ST_BASE}/worker.js`,
+        classWorkerURL: `${origin}${CORE_ST_BASE}/worker.js`,
         coreURL: `${CORE_ST_BASE}/wrapper.js`,
         wasmURL: `${CORE_ST_BASE}/ffmpeg-core.wasm`,
       });
