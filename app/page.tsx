@@ -36,7 +36,6 @@ interface GifSettings {
   width: number;
   colors: number;
   dither: boolean;
-  targetMB: number;
 }
 
 interface FetchResult {
@@ -100,14 +99,11 @@ export default function Home() {
     width: 320,
     colors: 128,
     dither: true,
-    targetMB: 8,
   });
 
   const [engineLoading, setEngineLoading] = useState(false);
   const [estimating, setEstimating] = useState(false);
   const [estimateBytes, setEstimateBytes] = useState<number | null>(null);
-  const [effectiveSettings, setEffectiveSettings] = useState<GifSettings | null>(null);
-  const [tightenNote, setTightenNote] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
   const [convertProgress, setConvertProgress] = useState(0);
   const [gifUrl, setGifUrl] = useState<string | null>(null);
@@ -166,8 +162,6 @@ export default function Home() {
     setTrimEnd(0);
     setGifUrl(null);
     setEstimateBytes(null);
-    setEffectiveSettings(null);
-    setTightenNote(null);
     setStudioError(null);
   }, [videoUrl]);
 
@@ -278,32 +272,6 @@ export default function Home() {
     [safeDelete]
   );
 
-  /** Sequence of tightened candidate settings after the initial encode. */
-  const tightenSequence = useCallback((base: GifSettings): GifSettings[] => {
-    const seq: GifSettings[] = [];
-    let cur = { ...base };
-    // 1) width down
-    for (const w of [640, 480, 320, 240, 160]) {
-      if (w < cur.width) {
-        cur = { ...cur, width: w };
-        seq.push(cur);
-      }
-    }
-    // 2) fps down to 8
-    while (cur.fps > 8) {
-      cur = { ...cur, fps: Math.max(8, cur.fps - 2) };
-      seq.push(cur);
-    }
-    // 3) colors down to 64
-    for (const c of [192, 128, 96, 64]) {
-      if (c < cur.colors) {
-        cur = { ...cur, colors: c };
-        seq.push(cur);
-      }
-    }
-    return seq;
-  }, []);
-
   /* ---------------- realistic size estimate ---------------- */
 
   const runEstimate = useCallback(async () => {
@@ -318,46 +286,13 @@ export default function Home() {
       const start = Math.min(trimStart, trimEnd - 0.5);
       const end = Math.max(trimEnd, trimStart + 0.5);
       const trimDur = end - start;
-      const targetBytes = settings.targetMB * 1024 * 1024;
 
-      const bytesFor = async (s: GifSettings): Promise<number> => {
-        const sampleBytes = await encodeSampleBytes(ffmpeg, s, start, end);
-        return sampleBytes * (trimDur / Math.min(2, trimDur));
-      };
-
-      let finalSettings = { ...settings };
-      let estBytes = await bytesFor(finalSettings);
-      // Raw estimate with the user's actual settings, shown separately from
-      // the target size. The tighten loop below only affects effectiveSettings
-      // (what gets exported), not this number.
-      const rawBytes = estBytes;
-      let encodes = 1;
-      const MAX_ENCODES = 8;
-
-      if (estBytes > targetBytes) {
-        for (const candidate of tightenSequence(settings)) {
-          if (myRun !== estimateRunId.current) return;
-          if (encodes >= MAX_ENCODES) break;
-          const b = await bytesFor(candidate);
-          encodes += 1;
-          finalSettings = candidate;
-          estBytes = b;
-          if (estBytes <= targetBytes) break;
-        }
-      }
-
+      // Encode a short sample with the user's exact settings and scale to
+      // the full trim duration. What you see is what the export will be —
+      // there is no auto-tightening; adjust the settings directly.
+      const sampleBytes = await encodeSampleBytes(ffmpeg, settings, start, end);
       if (myRun !== estimateRunId.current) return;
-      setEffectiveSettings(finalSettings);
-      setEstimateBytes(rawBytes);
-      const tightened =
-        finalSettings.width !== settings.width ||
-        finalSettings.fps !== settings.fps ||
-        finalSettings.colors !== settings.colors;
-      setTightenNote(
-        tightened
-          ? `Tightened to fit ${settings.targetMB} MB: ${finalSettings.width}px · ${finalSettings.fps}fps · ${finalSettings.colors} colors`
-          : null
-      );
+      setEstimateBytes(sampleBytes * (trimDur / Math.min(2, trimDur)));
     } catch (err) {
       if (myRun !== estimateRunId.current) return;
       // The ffmpeg worker can reject with plain strings; show the real cause.
@@ -366,7 +301,7 @@ export default function Home() {
     } finally {
       if (myRun === estimateRunId.current) setEstimating(false);
     }
-  }, [duration, trimStart, trimEnd, settings, ensureEngine, ensureInputWritten, encodeSampleBytes, tightenSequence]);
+  }, [duration, trimStart, trimEnd, settings, ensureEngine, ensureInputWritten, encodeSampleBytes]);
 
   // Debounced estimate when settings / trim / video change (~600ms).
   useEffect(() => {
@@ -386,13 +321,9 @@ export default function Home() {
     setStudioError(null);
     setGifUrl(null);
     try {
-      // Make sure the estimate (and any auto-tightening) is current.
-      let finalSettings = effectiveSettings;
-      if (!finalSettings) {
-        await runEstimate();
-        finalSettings = effectiveSettings;
-      }
-      const s: GifSettings = finalSettings ?? settings;
+      // The export uses the user's current settings exactly — the estimate
+      // above already reflects them, so there is nothing to reconcile.
+      const s: GifSettings = settings;
       const ffmpeg = await ensureEngine();
       await ensureInputWritten(ffmpeg);
 
@@ -454,7 +385,7 @@ export default function Home() {
     } finally {
       setConverting(false);
     }
-  }, [converting, effectiveSettings, settings, trimStart, trimEnd, runEstimate, ensureEngine, ensureInputWritten, safeDelete, gifUrl]);
+  }, [converting, settings, trimStart, trimEnd, ensureEngine, ensureInputWritten, safeDelete, gifUrl]);
 
   /* ---------------- Fetch Clip ---------------- */
 
@@ -628,8 +559,6 @@ export default function Home() {
                   setDuration(0);
                   setGifUrl(null);
                   setEstimateBytes(null);
-                  setEffectiveSettings(null);
-                  setTightenNote(null);
                   inputBlobRef.current = null;
                 }}
               >
@@ -756,18 +685,6 @@ export default function Home() {
                 <label htmlFor="dither">Dithering (smoother gradients)</label>
               </div>
 
-              <label className="label">
-                Target size: <strong>{settings.targetMB} MB</strong>
-              </label>
-              <input
-                type="range"
-                min={1}
-                max={50}
-                step={1}
-                value={settings.targetMB}
-                onChange={(e) => setSettings((s) => ({ ...s, targetMB: parseInt(e.target.value, 10) }))}
-              />
-
               {(estimating || engineLoading) && (
                 <div className="progress-wrap">
                   <QuoteBar active={true} />
@@ -785,7 +702,6 @@ export default function Home() {
                   📏 Estimated ≈ <strong>{formatMB(estimateBytes)} MB</strong> with these settings
                 </div>
               )}
-              {tightenNote && !estimating && <div className="note">🔧 {tightenNote}</div>}
 
               <div className="btn-row">
                 <button className="btn btn-primary" onClick={convert} disabled={converting || duration <= 0}>
