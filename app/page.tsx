@@ -8,20 +8,20 @@ import { fetchFile } from "@ffmpeg/util";
 /* 90s hip-hop quotes shown while work is in progress                   */
 /* ------------------------------------------------------------------ */
 const QUOTES: { line: string; artist: string }[] = [
-  { line: "It was all a dream…", artist: "The Notorious B.I.G." },
-  { line: "Can't touch this.", artist: "MC Hammer" },
-  { line: "Straight outta Compton!", artist: "N.W.A" },
-  { line: "Fight the power!", artist: "Public Enemy" },
-  { line: "Jump around!", artist: "House of Pain" },
-  { line: "Insane in the brain!", artist: "Cypress Hill" },
-  { line: "Baby got back.", artist: "Sir Mix-a-Lot" },
-  { line: "California love!", artist: "2Pac" },
-  { line: "Regulators, mount up.", artist: "Warren G" },
-  { line: "Sabotage!", artist: "Beastie Boys" },
-  { line: "Push it real good.", artist: "Salt-N-Pepa" },
-  { line: "Whoomp! There it is.", artist: "Tag Team" },
-  { line: "99 problems but a GIF ain't one.", artist: "Gif Happens remix" },
-  { line: "It ain't nothin' but a GIF thang.", artist: "Gif Happens remix" },
+  { line: "It was all a dream — I used to read Word Up! magazine, Salt-n-Pepa and Heavy D up in the limousine.", artist: "The Notorious B.I.G." },
+  { line: "Stop… Hammer time! You can't touch this — my music hits so hard it makes me say, oh my Lord, thank you for blessing me.", artist: "MC Hammer" },
+  { line: "Straight outta Compton — you are now about to witness the strength of street knowledge.", artist: "N.W.A" },
+  { line: "Fight the power! We've got to fight the powers that be.", artist: "Public Enemy" },
+  { line: "Jump around! Jump around — jump up, jump up, and get down.", artist: "House of Pain" },
+  { line: "Insane in the brain! Insane in the membrane.", artist: "Cypress Hill" },
+  { line: "I like big butts and I cannot lie — you other brothers can't deny.", artist: "Sir Mix-a-Lot" },
+  { line: "California love! California knows how to party.", artist: "2Pac" },
+  { line: "Regulators, mount up. It was a clear black night, a clear white moon — Warren G was on the streets, trying to consume.", artist: "Warren G" },
+  { line: "Sabotage! I can't stand it — I know you planned it.", artist: "Beastie Boys" },
+  { line: "Push it real good. Ahh, push it.", artist: "Salt-N-Pepa" },
+  { line: "Whoomp! There it is. Give me the jam and watch me slam.", artist: "Tag Team" },
+  { line: "99 problems but a GIF ain't one — hit me!", artist: "Gif Happens remix" },
+  { line: "It ain't nothin' but a GIF thang, baby. Two of America's most wanted.", artist: "Gif Happens remix" },
 ];
 
 // The ffmpeg core is self-hosted (see public/ffmpeg-core): same-origin
@@ -73,7 +73,7 @@ function QuoteBar({ active }: { active: boolean }) {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
     if (!active) return;
-    const id = setInterval(() => setIdx((i) => (i + 1) % QUOTES.length), 2800);
+    const id = setInterval(() => setIdx((i) => (i + 1) % QUOTES.length), 5000);
     return () => clearInterval(id);
   }, [active]);
   if (!active) return null;
