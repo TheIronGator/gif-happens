@@ -2,13 +2,13 @@
 /**
  * scripts/fetch-ffmpeg-core.mjs
  *
- * Downloads the @ffmpeg/core-st build (ffmpeg-core.js + ffmpeg-core.wasm) at
+ * Downloads the @ffmpeg/core build (ffmpeg-core.js + ffmpeg-core.wasm) at
  * BUILD time into <repoRoot>/public/ffmpeg-core/. Served same-origin by
  * Next.js, so the browser never depends on a third-party CDN at runtime.
  * Runs during the Vercel build (see vercel.json). NEVER runs at request time.
  *
- * The downloaded files are gitignored; only wrapper.js (hand-written, in this
- * directory) is committed.
+ * The downloaded files are gitignored; public/ffmpeg-core/worker.js
+ * (hand-written) is the only committed file in this directory.
  *
  * Usage: node scripts/fetch-ffmpeg-core.mjs
  */
@@ -18,8 +18,8 @@ import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const VERSION = "0.11.1";
-const BASE = `https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@${VERSION}/dist`;
+const VERSION = "0.12.10";
+const BASE = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${VERSION}/dist/esm`;
 const FILES = [
   { name: "ffmpeg-core.js", minBytes: 10 * 1024 },
   { name: "ffmpeg-core.wasm", minBytes: 5 * 1024 * 1024 },

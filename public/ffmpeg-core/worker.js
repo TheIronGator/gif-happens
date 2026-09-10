@@ -7,14 +7,18 @@
  * FFPROBE / file ops / LOG / PROGRESS), but loads the core with a plain
  * native dynamic import instead of the importScripts-then-import fallback in
  * the bundled worker. The bundler rewrites that fallback import into a chunk
- * lookup that fails at runtime ("Cannot find module"), and build-cache
- * restores can even resurrect the unpatched version — so this file is never
- * bundled at all. The import below stays native, and the engine boots.
+ * lookup that fails at runtime ("Cannot find module"), and build caches can
+ * even resurrect the broken version — so this file is never bundled at all.
+ * The import below stays native, and the engine boots.
+ *
+ * The core is @ffmpeg/core (single-threaded ESM build, self-hosted next to
+ * this file). It understands the mainScriptUrlOrBlob option, so the wasm and
+ * worker URLs ride along in the core URL hash, exactly like the stock worker.
  *
  * Used via:
  *   ffmpeg.load({
- *     classWorkerURL: "/ffmpeg-core/worker.js",
- *     coreURL: "/ffmpeg-core/wrapper.js",
+ *     classWorkerURL: "<origin>/ffmpeg-core/worker.js",
+ *     coreURL: "/ffmpeg-core/ffmpeg-core.js",
  *     wasmURL: "/ffmpeg-core/ffmpeg-core.wasm",
  *   })
  */
@@ -52,13 +56,13 @@ const load = async ({ coreURL, wasmURL, workerURL }) => {
   // Native dynamic import. This file is served statically and never bundled,
   // so no bundler can rewrite this into a broken module lookup.
   const { default: createFFmpegCore } = await import(coreURL);
-  if (!createFFmpegCore) throw ERROR_IMPORT_FAILURE;
+  if (typeof createFFmpegCore !== "function") throw ERROR_IMPORT_FAILURE;
   const _coreURL = coreURL;
   const _wasmURL = wasmURL ? wasmURL : coreURL.replace(/.js$/g, ".wasm");
   const _workerURL = workerURL ? workerURL : coreURL.replace(/.js$/g, ".worker.js");
   ffmpeg = await createFFmpegCore({
-    // Same shape the stock worker sends; wrapper.js ignores it and injects
-    // locateFile for the core-st build instead.
+    // Encoded wasmURL and workerURL in the URL as a hack to fix locateFile
+    // issue (same shape the stock worker sends; @ffmpeg/core understands it).
     mainScriptUrlOrBlob: `${_coreURL}#${btoa(
       JSON.stringify({ wasmURL: _wasmURL, workerURL: _workerURL })
     )}`,

@@ -25,9 +25,9 @@ const QUOTES: { line: string; artist: string }[] = [
 ];
 
 // The ffmpeg core is self-hosted (see public/ffmpeg-core): same-origin
-// files, no CDN dependency at runtime. wrapper.js injects `locateFile`
-// so the core-st@0.11.1 wasm resolves to the right file.
-const CORE_ST_BASE = "/ffmpeg-core";
+// files, no CDN dependency at runtime. @ffmpeg/core (single-threaded ESM)
+// is downloaded at build time by scripts/fetch-ffmpeg-core.mjs.
+const CORE_BASE = "/ffmpeg-core";
 const WIDTH_OPTIONS = [160, 240, 320, 480, 640];
 const COLOR_OPTIONS = [64, 96, 128, 192, 256];
 
@@ -183,16 +183,15 @@ export default function Home() {
       // of the bundled @ffmpeg/ffmpeg worker: the bundler rewrites that
       // worker's dynamic core import into a broken chunk lookup, and build
       // caches can resurrect the broken version. The static worker loads the
-      // core with a native import, which just works. wrapper.js injects
-      // `locateFile` so the core-st@0.11.1 wasm resolves to the right file.
+      // core with a native import, which just works.
       const ffmpeg = new FFmpeg();
       // classWorkerURL must be absolute: the library resolves it against
       // import.meta.url, which the bundler bakes in as a file:// URL.
       const origin = window.location.origin;
       await ffmpeg.load({
-        classWorkerURL: `${origin}${CORE_ST_BASE}/worker.js`,
-        coreURL: `${CORE_ST_BASE}/wrapper.js`,
-        wasmURL: `${CORE_ST_BASE}/ffmpeg-core.wasm`,
+        classWorkerURL: `${origin}${CORE_BASE}/worker.js`,
+        coreURL: `${CORE_BASE}/ffmpeg-core.js`,
+        wasmURL: `${CORE_BASE}/ffmpeg-core.wasm`,
       });
       ffmpegRef.current = ffmpeg;
       return ffmpeg;
