@@ -179,11 +179,15 @@ export default function Home() {
     setEngineLoading(true);
     try {
       // The core is self-hosted (public/ffmpeg-core, downloaded at build
-      // time) and loaded through wrapper.js, which injects a `locateFile`
-      // for the wasm. The ffmpeg worker's dynamic import is patched at build
-      // time (scripts/patch-ffmpeg-worker.mjs) so webpack doesn't intercept it.
+      // time). We use our own static class-worker (also in public/) instead
+      // of the bundled @ffmpeg/ffmpeg worker: the bundler rewrites that
+      // worker's dynamic core import into a broken chunk lookup, and build
+      // caches can resurrect the broken version. The static worker loads the
+      // core with a native import, which just works. wrapper.js injects
+      // `locateFile` so the core-st@0.11.1 wasm resolves to the right file.
       const ffmpeg = new FFmpeg();
       await ffmpeg.load({
+        classWorkerURL: `${CORE_ST_BASE}/worker.js`,
         coreURL: `${CORE_ST_BASE}/wrapper.js`,
         wasmURL: `${CORE_ST_BASE}/ffmpeg-core.wasm`,
       });

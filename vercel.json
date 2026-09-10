@@ -1,1 +1,1 @@
-{"buildCommand":"node scripts/fetch-ytdlp.mjs && node scripts/fetch-ffmpeg-core.mjs && node scripts/patch-ffmpeg-worker.mjs && next build","functions":{"app/api/fetch/route.ts":{"maxDuration":60}}}
+{"buildCommand":"node scripts/fetch-ytdlp.mjs && node scripts/fetch-ffmpeg-core.mjs && next build","functions":{"app/api/fetch/route.ts":{"maxDuration":60}}}
