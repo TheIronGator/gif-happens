@@ -29,6 +29,7 @@ const QUOTES: { line: string; artist: string }[] = [
 // is downloaded at build time by scripts/fetch-ffmpeg-core.mjs.
 const CORE_BASE = "/ffmpeg-core";
 const WIDTH_OPTIONS = [160, 240, 320, 480, 640];
+const FPS_OPTIONS = [12, 24, 30, 48, 60];
 const COLOR_OPTIONS = [64, 96, 128, 192, 256];
 
 interface GifSettings {
@@ -95,7 +96,7 @@ export default function Home() {
   const [trimEnd, setTrimEnd] = useState(0);
 
   const [settings, setSettings] = useState<GifSettings>({
-    fps: 12,
+    fps: 30,
     width: 320,
     colors: 128,
     dither: true,
@@ -111,6 +112,8 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
   // Custom width input text; null = preset mode (input hidden).
   const [customWidthText, setCustomWidthText] = useState<string | null>(null);
+  // Custom fps input text; null = preset mode (input hidden).
+  const [customFpsText, setCustomFpsText] = useState<string | null>(null);
 
   const commitCustomWidth = useCallback(() => {
     if (customWidthText === null) return;
@@ -124,6 +127,19 @@ export default function Home() {
       setCustomWidthText(String(settings.width));
     }
   }, [customWidthText, settings.width]);
+
+  const commitCustomFps = useCallback(() => {
+    if (customFpsText === null) return;
+    const parsed = parseInt(customFpsText, 10);
+    if (isFinite(parsed)) {
+      const clamped = Math.min(60, Math.max(1, parsed));
+      setSettings((s) => ({ ...s, fps: clamped }));
+      setCustomFpsText(String(clamped));
+    } else {
+      // Not a number — revert the field to the current fps.
+      setCustomFpsText(String(settings.fps));
+    }
+  }, [customFpsText, settings.fps]);
 
   const ffmpegRef = useRef<FFmpeg | null>(null);
   const inputBlobRef = useRef<Blob | null>(null);
@@ -611,17 +627,44 @@ export default function Home() {
                 </div>
               )}
 
-              <label className="label">
-                Frame rate: <strong>{settings.fps} fps</strong>
-              </label>
-              <input
-                type="range"
-                min={5}
-                max={30}
-                step={1}
-                value={settings.fps}
-                onChange={(e) => setSettings((s) => ({ ...s, fps: parseInt(e.target.value, 10) }))}
-              />
+              <label className="label">Frame rate</label>
+              <select
+                className="select-input"
+                value={FPS_OPTIONS.includes(settings.fps) ? settings.fps : "custom"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v === "custom") {
+                    setCustomFpsText(String(settings.fps));
+                  } else {
+                    setCustomFpsText(null);
+                    setSettings((s) => ({ ...s, fps: parseInt(v, 10) }));
+                  }
+                }}
+              >
+                {FPS_OPTIONS.map((f) => (
+                  <option key={f} value={f}>
+                    {f} fps
+                  </option>
+                ))}
+                <option value="custom">Custom…</option>
+              </select>
+              {customFpsText !== null && (
+                <input
+                  className="select-input"
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={customFpsText}
+                  onChange={(e) => setCustomFpsText(e.target.value)}
+                  onBlur={commitCustomFps}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  }}
+                  aria-label="Custom frame rate"
+                  style={{ marginTop: 8 }}
+                />
+              )}
 
               <label className="label">Width</label>
               <select
