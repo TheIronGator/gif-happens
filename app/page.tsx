@@ -123,8 +123,10 @@ export default function Home() {
   const [fetching, setFetching] = useState(false);
   const [fetchResult, setFetchResult] = useState<FetchResult | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [fetchStatus, setFetchStatus] = useState<string | null>(null);
   const [loadMsg, setLoadMsg] = useState<string | null>(null);
   const [loadingClip, setLoadingClip] = useState(false);
+  const fetchCancelRef = useRef(false);
 
   const studioRef = useRef<HTMLDivElement>(null);
 
@@ -416,29 +418,91 @@ export default function Home() {
 
   /* ---------------- Fetch Clip ---------------- */
 
+  // Errors worth retrying: YouTube's bot wall / rate limits are intermittent,
+  // and each retry is a fresh serverless invocation (possibly a new egress IP).
+  const BLOCKED_RETRY = /blocking automated downloads|rate-limiting|timed out/i;
+  const MAX_FETCH_ATTEMPTS = 6;
+  const RETRY_DELAYS_MS = [8000, 12000, 18000, 25000, 35000];
+
+  /** True for youtube.com / youtu.be links — only these get the retry loop. */
+  const isYouTubeLink = (raw: string) => {
+    try {
+      const h = new URL(raw).hostname.toLowerCase();
+      return (
+        h === "youtube.com" ||
+        h === "www.youtube.com" ||
+        h === "m.youtube.com" ||
+        h === "music.youtube.com" ||
+        h === "youtu.be"
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  /** Sleep that aborts early if the user hits Cancel. */
+  const cancellableSleep = (ms: number) =>
+    new Promise<void>((resolve) => {
+      const start = Date.now();
+      const tick = () => {
+        if (fetchCancelRef.current || Date.now() - start >= ms) resolve();
+        else setTimeout(tick, 250);
+      };
+      tick();
+    });
+
   const fetchClip = useCallback(async () => {
     const url = clipUrl.trim();
     if (!url || fetching) return;
+    // Retry loop is YouTube-only; Instagram etc. keep the normal single attempt.
+    const youtube = isYouTubeLink(url);
+    const maxAttempts = youtube ? MAX_FETCH_ATTEMPTS : 1;
+    fetchCancelRef.current = false;
     setFetching(true);
     setFetchError(null);
     setFetchResult(null);
+    setFetchStatus(null);
     setLoadMsg(null);
     try {
-      const res = await fetch("/api/fetch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, quality: clipQuality, includeThumbnail: clipThumb }),
-      });
-      const json = (await res.json()) as FetchResult | { ok: false; error: string };
-      if (json.ok) {
-        setFetchResult(json);
-      } else {
-        setFetchError(json.error || "Couldn't fetch that link.");
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (fetchCancelRef.current) return;
+        setFetchStatus(
+          attempt === 1 ? "Contacting the source…" : `Attempt ${attempt} of ${maxAttempts}…`
+        );
+        let data: FetchResult | { ok: false; error: string };
+        try {
+          const res = await fetch("/api/fetch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, quality: clipQuality, includeThumbnail: clipThumb }),
+          });
+          data = (await res.json()) as FetchResult | { ok: false; error: string };
+        } catch {
+          data = { ok: false, error: "Couldn't reach the fetch service. Check your connection and try again." };
+        }
+        if (data.ok) {
+          setFetchResult(data);
+          return;
+        }
+        const errMsg = data.error || "Couldn't fetch that link.";
+        const retriable = youtube && BLOCKED_RETRY.test(errMsg);
+        if (!retriable || attempt === maxAttempts) {
+          setFetchError(
+            attempt === maxAttempts && retriable
+              ? `Tried ${maxAttempts} times — YouTube is still blocking automated downloads from the server. Try again in a few minutes, or send the link to me directly and I'll grab it for you.`
+              : errMsg
+          );
+          return;
+        }
+        const waitMs = RETRY_DELAYS_MS[attempt - 1] ?? 35000;
+        setFetchStatus(
+          `Attempt ${attempt} of ${maxAttempts} bounced off YouTube's wall — trying again in ${Math.round(waitMs / 1000)}s…`
+        );
+        await cancellableSleep(waitMs);
       }
-    } catch {
-      setFetchError("Couldn't reach the fetch service. Check your connection and try again.");
     } finally {
       setFetching(false);
+      setFetchStatus(null);
     }
   }, [clipUrl, clipQuality, clipThumb, fetching]);
 
@@ -721,6 +785,11 @@ export default function Home() {
             <button className="btn btn-primary" onClick={fetchClip} disabled={fetching || !clipUrl.trim()}>
               {fetching ? "Fetching…" : "📥 Fetch Clip"}
             </button>
+            {fetching && (
+              <button className="btn btn-secondary" onClick={() => { fetchCancelRef.current = true; }}>
+                ✕ Cancel
+              </button>
+            )}
           </div>
 
           {fetching && (
@@ -729,6 +798,7 @@ export default function Home() {
               <div className="progress-track">
                 <div className="progress-fill progress-indeterminate" />
               </div>
+              {fetchStatus && <p className="meta-line" style={{ marginTop: 8 }}>🔁 {fetchStatus}</p>}
             </div>
           )}
 
