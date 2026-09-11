@@ -208,17 +208,17 @@ input[type="range"] {
 
 /* Dropzone */
 .dropzone {
-  border: 3px dashed #f0a8c6;
+  border: 3px dashed #8ecbe8;
   border-radius: 20px;
   padding: 28px 16px;
   text-align: center;
   cursor: pointer;
-  background: #fff7fb;
+  background: #f4faff;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .dropzone.dragging {
-  background: #ffe3ef;
+  background: #dff1fc;
   border-color: #2fa8cf;
 }
 
