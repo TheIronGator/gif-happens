@@ -162,6 +162,12 @@ export default function Home() {
   // Trimmer preview video — the in/out sliders seek this so you see the exact frame.
   const trimVideoRef = useRef<HTMLVideoElement | null>(null);
 
+  /* ---------------- studio: load from URL ---------------- */
+  const [studioUrl, setStudioUrl] = useState("");
+  const [studioUrlLoading, setStudioUrlLoading] = useState(false);
+  const [studioUrlStatus, setStudioUrlStatus] = useState<string | null>(null);
+  const [studioUrlError, setStudioUrlError] = useState<string | null>(null);
+
   /* ---------------- video loading ---------------- */
 
   /** Load a Blob programmatically (file input, drag-drop, or Fetch Clip). */
@@ -196,6 +202,52 @@ export default function Home() {
     },
     [loadVideoBlob]
   );
+
+  /** Load a video into the studio straight from an IG/TikTok/YouTube link. */
+  const loadStudioUrl = useCallback(async () => {
+    const url = studioUrl.trim();
+    if (!url || studioUrlLoading) return;
+    setStudioUrlLoading(true);
+    setStudioUrlError(null);
+    setStudioUrlStatus("Asking the video source for a file…");
+    try {
+      const res = await fetch("/api/fetch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, quality: "720" }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error ?? "Couldn't fetch that link.");
+      const downloadUrl: string = json.downloadUrl;
+
+      // Fast path: pull the bytes straight from the video host.
+      setStudioUrlStatus("Downloading the video…");
+      let blob: Blob | null = null;
+      try {
+        const direct = await fetch(downloadUrl);
+        if (!direct.ok) throw new Error(`host responded ${direct.status}`);
+        blob = await direct.blob();
+      } catch {
+        // Some hosts block cross-origin browser requests — relay the bytes
+        // through our own server instead.
+        setStudioUrlStatus("Retrying through our server…");
+        const proxied = await fetch(`/api/video?u=${encodeURIComponent(downloadUrl)}`);
+        if (!proxied.ok) throw new Error("the video host blocked the download");
+        blob = await proxied.blob();
+      }
+      if (!blob || blob.size === 0) throw new Error("the download came back empty");
+      const title = typeof json.title === "string" && json.title ? json.title : "clip";
+      loadVideoBlob(blob, `${sanitizeFileName(title)}.${json.ext ?? "mp4"}`);
+      setStudioUrl("");
+    } catch (err) {
+      setStudioUrlError(
+        err instanceof Error ? `Couldn't load that link: ${err.message}` : "Couldn't load that link."
+      );
+    } finally {
+      setStudioUrlLoading(false);
+      setStudioUrlStatus(null);
+    }
+  }, [studioUrl, studioUrlLoading, loadVideoBlob]);
 
   /* ---------------- ffmpeg lazy load ---------------- */
 
@@ -530,30 +582,74 @@ export default function Home() {
           <h2 className="section-title">✂️ GIF Studio</h2>
 
           {!videoUrl ? (
-            <div
-              className={`dropzone${dragging ? " dragging" : ""}`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragging(false);
-                handleFile(e.dataTransfer.files?.[0]);
-              }}
-              onClick={() => document.getElementById("file-input")?.click()}
-            >
-              <p>🎥 Drop a video file here, or</p>
-              <span className="btn btn-primary">Choose file</span>
-              <input
-                id="file-input"
-                type="file"
-                accept="video/*"
-                style={{ display: "none" }}
-                onChange={(e) => handleFile(e.target.files?.[0])}
-              />
-            </div>
+            <>
+              <div
+                className={`dropzone${dragging ? " dragging" : ""}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  handleFile(e.dataTransfer.files?.[0]);
+                }}
+                onClick={() => document.getElementById("file-input")?.click()}
+              >
+                <p>🎥 Drop a video file here, or</p>
+                <span className="btn btn-primary">Choose file</span>
+                <input
+                  id="file-input"
+                  type="file"
+                  accept="video/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => handleFile(e.target.files?.[0])}
+                />
+              </div>
+
+              <div className="url-divider">
+                <span>or paste a video link</span>
+              </div>
+              <div className="url-row">
+                <input
+                  className="text-input"
+                  type="url"
+                  inputMode="url"
+                  placeholder="TikTok, Instagram, or YouTube link…"
+                  aria-label="Video URL"
+                  value={studioUrl}
+                  onChange={(e) => setStudioUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void loadStudioUrl();
+                  }}
+                  disabled={studioUrlLoading}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={() => void loadStudioUrl()}
+                  disabled={studioUrlLoading || !studioUrl.trim()}
+                >
+                  {studioUrlLoading ? "Fetching…" : "🔗 Load video"}
+                </button>
+              </div>
+
+              {studioUrlLoading && (
+                <div className="progress-wrap">
+                  <QuoteBar active={true} />
+                  <div className="progress-track">
+                    <div className="progress-fill progress-indeterminate" />
+                  </div>
+                  {studioUrlStatus && (
+                    <p className="meta-line" style={{ marginTop: 8 }}>
+                      {studioUrlStatus}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {studioUrlError && <div className="error-box">⚠️ {studioUrlError}</div>}
+            </>
           ) : (
             <>
               <video

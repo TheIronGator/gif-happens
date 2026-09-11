@@ -102,6 +102,46 @@ body {
   margin-top: 12px;
 }
 
+/* Paste-a-link row under the studio dropzone */
+.url-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 12px;
+  color: #6b5b68;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.url-divider::before,
+.url-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #f3d3e2;
+}
+
+.url-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.url-row .text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.url-row .btn {
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .url-row {
+    flex-direction: column;
+  }
+}
+
 /* Inputs */
 .text-input,
 .select-input {
